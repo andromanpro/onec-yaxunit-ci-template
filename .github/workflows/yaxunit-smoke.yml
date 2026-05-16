@@ -1,0 +1,46 @@
+name: YAxUnit Smoke
+
+# Аналог Gitea workflow для GitHub Actions. Различия:
+# - runs-on с github-style labels (self-hosted Windows runner)
+# - secrets.ONEC_BASE_PASS — хранится в Settings → Secrets → Actions
+on:
+  push:
+    paths:
+      - 'src/**'
+      - '.github/workflows/yaxunit-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  yaxunit-smoke:
+    # Labels должны совпадать с тем, что указано при регистрации runner.
+    # README шаг 2 предлагает `windows-1c,self-hosted,windows,x64`.
+    # Если у тебя другие labels — поправь обе стороны (тут и в `act_runner register`).
+    runs-on: [self-hosted, windows, x64, windows-1c]
+    timeout-minutes: 10
+
+    env:
+      ONEC_PLATFORM_VERSION: "8.3.27.1989"
+      YAXUNIT_VERSION: "25.12"
+      ALLURE_PROJECT_ID: "your-project-id"
+      ALLURE_URL: "http://your-nas:5050"
+      EXECUTOR_URL: "${{ github.server_url }}/${{ github.repository }}"
+      EXECUTOR_BUILD_NAME: "yaxunit-smoke"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run YAxUnit smoke wrapper
+        shell: cmd
+        run: |
+          powershell -ExecutionPolicy Bypass -File ${{ github.workspace }}\ci\run-yaxunit-smoke.ps1 ^
+            -BasePath "C:\1C Bases\YOUR_BASE" ^
+            -BaseUser "ci-user" ^
+            -BasePass "${{ secrets.ONEC_BASE_PASS }}" ^
+            -V8Version "8.3.27.1989" ^
+            -ReportDir "${{ github.workspace }}\ci\ci-reports"
+
+      - name: Upload results to Allure server
+        if: always()
+        shell: cmd
+        run: py -3.14 ${{ github.workspace }}\ci\upload-to-allure.py --reports-dir "${{ github.workspace }}\ci\ci-reports"

@@ -1,0 +1,40 @@
+# Alertmanager → Telegram bot
+#
+# Как заполнить:
+#   1. Создать бота через @BotFather в Telegram:
+#        /newbot → получите токен вида 1234567890:AAExxxxxxxxxx
+#   2. Добавить бота в нужный чат/группу (или личку — но лучше группа)
+#   3. Узнать chat_id:
+#        Вариант A — для группы: добавить @get_id_bot и он напишет id
+#        Вариант B — через API: после первого сообщения боту запросить
+#                   https://api.telegram.org/bot<TOKEN>/getUpdates
+#                   и найти "chat":{"id":...} в ответе
+#   4. Подставить bot_token и chat_id ниже
+#   5. Скопировать этот файл как `config.yml` (без .example)
+#
+# ⚠️ НЕ коммитить config.yml с реальным токеном в публичный репозиторий.
+# Файл `config.yml` уже в .gitignore этого репо. `config.yml.example` коммитим.
+
+route:
+  receiver: 'telegram'
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+
+receivers:
+  - name: 'telegram'
+    telegram_configs:
+      - bot_token: 'PASTE_BOT_TOKEN_HERE'  # 1234567890:AAExxxxxxxxxx
+        chat_id: -1234567890               # отрицательное число для группы, положительное для лички
+        send_resolved: true
+        parse_mode: 'HTML'
+        message: |
+          <b>{{ if eq .Status "firing" }}🔥 FIRING{{ else }}✅ RESOLVED{{ end }} — {{ .CommonLabels.alertname }}</b>
+          <i>severity: {{ .CommonLabels.severity }}</i>
+          {{ range .Alerts }}
+          • {{ .Annotations.summary }}{{ if .Annotations.description }}
+            {{ .Annotations.description }}{{ end }}{{ if .Labels.instance }}
+            <code>{{ .Labels.instance }}</code>{{ end }}{{ end }}
+
+inhibit_rules: []

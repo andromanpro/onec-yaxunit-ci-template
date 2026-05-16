@@ -1,0 +1,20 @@
+# Runtime logs
+*.log
+
+# CI artifacts
+ci/ci-reports/
+allure-results/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

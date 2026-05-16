@@ -1,0 +1,51 @@
+name: YAxUnit Smoke
+
+# Триггеры подгоняй под свой проект:
+# - push: только при изменении кода тестов / расширения
+# - workflow_dispatch: manual trigger из UI или curl
+on:
+  push:
+    paths:
+      - 'src/**'
+      - '.gitea/workflows/yaxunit-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  yaxunit-smoke:
+    # Label runner'а — должен совпадать с тем что зарегистрирован при `act_runner register`.
+    # Если у тебя один Windows runner и базовая labels — оставь "windows-1c" или замени на свой.
+    runs-on: windows-1c
+    timeout-minutes: 10
+
+    env:
+      # Эти env-vars передаются в Python-скрипты (см. ci/junit_to_allure_impl.py + upload-to-allure.py).
+      # Замени значения на свои.
+      ONEC_PLATFORM_VERSION: "8.3.27.1989"
+      YAXUNIT_VERSION: "25.12"
+      ALLURE_PROJECT_ID: "your-project-id"
+      ALLURE_URL: "http://your-nas:5050"
+      EXECUTOR_URL: "http://your-gitea/owner/repo"
+      EXECUTOR_BUILD_NAME: "yaxunit-smoke"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Wrapper лежит в ci/ — параметры передаём через флаги PowerShell.
+      # Под Windows-сервисом (LocalSystem) shell:powershell ломается на ExecutionPolicy=Restricted —
+      # используем shell:cmd + явный -ExecutionPolicy Bypass -File. См. README "Gotcha 1".
+      - name: Run YAxUnit smoke wrapper
+        shell: cmd
+        run: |
+          powershell -ExecutionPolicy Bypass -File ${{ github.workspace }}\ci\run-yaxunit-smoke.ps1 ^
+            -BasePath "C:\1C Bases\YOUR_BASE" ^
+            -BaseUser "ci-user" ^
+            -BasePass "${{ secrets.ONEC_BASE_PASS }}" ^
+            -V8Version "8.3.27.1989" ^
+            -ReportDir "${{ github.workspace }}\ci\ci-reports"
+
+      # Allure upload — `if: always()` чтобы отчёт собрался даже при failed-тестах.
+      - name: Upload results to Allure server
+        if: always()
+        shell: cmd
+        run: py -3.14 ${{ github.workspace }}\ci\upload-to-allure.py --reports-dir "${{ github.workspace }}\ci\ci-reports"

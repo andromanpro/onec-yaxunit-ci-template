@@ -1,0 +1,119 @@
+# Единый стек для CI 1С — Allure + Prometheus + Grafana + Alertmanager + Telegram
+#
+# Этот compose поднимает И Allure server, И мониторинг одной командой —
+# allure-exporter резолвит `allure:5050` внутри общей сети без ручных действий.
+#
+# ВАЖНО: если используешь этот compose — НЕ запускай отдельный `docker run`
+# с allure-docker-service из шага 1 README (будет конфликт порта 5050).
+# Этот файл заменяет шаг 1 для тех, кому нужен мониторинг.
+#
+# Quick start:
+#   1. Скопируйте alertmanager/config.yml.example → alertmanager/config.yml
+#      Подставьте реальные bot_token и chat_id (см. инструкцию в config.yml.example)
+#   2. docker compose up -d
+#   3. http://<host>:5050 — Allure, http://<host>:3001 — Grafana
+#   4. В Grafana: Add data source → Prometheus → URL: http://prometheus:9090
+#   5. В Grafana: Dashboards → Import → загрузите grafana/allure-ci-dashboard.json
+
+services:
+  allure:
+    image: frankescobar/allure-docker-service:2.38.1
+    container_name: allure
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    environment:
+      - CHECK_RESULTS_EVERY_SECONDS=NONE
+      - KEEP_HISTORY=1
+      - KEEP_HISTORY_LATEST=20
+    volumes:
+      - allure-projects:/app/projects
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_SECURITY_ADMIN_PASSWORD=CHANGE_ME_BEFORE_PRODUCTION
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      # Synology: путь к Docker data root
+      # Стандартный Docker: /var/lib/docker
+      - /var/lib/docker:/var/lib/docker:ro
+
+  allure-exporter:
+    build: ./allure-exporter
+    container_name: allure-exporter
+    restart: unless-stopped
+    environment:
+      # Имя или IP контейнера allure-docker-service. На той же сети — `allure:5050`
+      - ALLURE_URL=http://allure:5050
+      - LISTEN_PORT=9091
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/config.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+
+volumes:
+  allure-projects:
+  prometheus-data:
+  grafana-data:
+  alertmanager-data:
+
+# Все сервисы в одной compose-сети по умолчанию — allure-exporter
+# резолвит `allure:5050` без дополнительной настройки.
